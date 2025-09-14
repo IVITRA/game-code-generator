@@ -1,0 +1,5 @@
+{
+  "name": "Game Code Generator",
+  "description": "An application that uses AI to generate ready-to-use code snippets for game development, covering character movement, anti-cheat, and more.",
+  "requestFramePermissions": []
+}
