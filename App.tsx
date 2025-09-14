@@ -95,11 +95,7 @@ const App: React.FC = () => {
         setGeneratedCode(result.code);
         setGeneratedAdvice(result.advice);
     } catch (err: any) {
-        if (err instanceof Error && err.message.includes("API Key is not configured")) {
-            setError(err.message);
-        } else {
-            setError(t('errorOccurred'));
-        }
+        setError(t('errorOccurred'));
         console.error(err);
     } finally {
         setIsLoading(false);
@@ -123,11 +119,7 @@ const App: React.FC = () => {
         const tips = await generateGameTips(tipsOptions, language, (status) => setLoadingStatus(t(status)));
         setGeneratedTips(tips);
     } catch (err: any) {
-        if (err instanceof Error && err.message.includes("API Key is not configured")) {
-            setError(err.message);
-        } else {
-            setError(t('errorOccurredTips'));
-        }
+        setError(t('errorOccurredTips'));
         console.error(err);
     } finally {
         setIsLoading(false);
