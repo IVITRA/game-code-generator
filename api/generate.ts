@@ -36,15 +36,13 @@ const getSystemInstructionGenerate = (language: 'en' | 'ar', includeComments: bo
     ? `The code MUST be well-commented in ${lang}, explaining complex parts and XML comments for public members.`
     : `The code MUST NOT include any comments.`;
   
-  let adviceInstruction = `The 'advice' field must contain relevant, expert advice for the generated code.`;
+  let adviceInstruction = `The 'advice' field should contain a brief, helpful tip related to the code's context (e.g., integration, optimization). If no specific advice is applicable, you can omit this field.`;
   if (category === Category.PROTECTION) {
-      adviceInstruction += ` Specifically for this anti-cheat script, you MUST explain the limitations of a client-side solution and emphasize why server-side validation is a more secure approach.`;
-  } else {
-      adviceInstruction += ` Provide a brief, helpful tip related to the code's context (e.g., integration, optimization). The advice MUST NOT be an empty string.`;
+      adviceInstruction = `The 'advice' field is CRUCIAL for this category and MUST be included. In it, you MUST explain the limitations of a client-side anti-cheat solution and strongly emphasize why server-side validation is the only truly secure approach.`;
   }
 
   return `You are an expert game developer specializing in Unity, Unreal Engine, and Godot.
-Your task is to provide a JSON object containing a 'code' field and an 'advice' field.
+Your task is to provide a JSON object containing a 'code' field and optionally an 'advice' field.
 The response language for all text, including code comments and advice, MUST be ${lang}.
 CODE QUALITY REQUIREMENTS:
 - The code must be modular, performant, and easy to integrate.
@@ -128,7 +126,14 @@ export default async function handler(req: any, res: any) {
         config: {
           systemInstruction: getSystemInstructionGenerate(language, includeComments, category),
           responseMimeType: "application/json",
-          responseSchema: { type: Type.OBJECT, properties: { code: { type: Type.STRING }, advice: { type: Type.STRING } } }
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              code: { type: Type.STRING, description: "The generated game script." },
+              advice: { type: Type.STRING, description: "Expert advice or warnings related to the generated code." }
+            },
+            required: ["code"]
+          }
         },
       });
       const jsonString = response.text.trim();
