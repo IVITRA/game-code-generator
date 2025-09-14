@@ -37,7 +37,7 @@ const getSystemInstructionGenerate = (language: 'en' | 'ar', includeComments: bo
     : `The code MUST NOT include any comments.`;
   
   return `You are an expert game developer specializing in Unity, Unreal Engine, and Godot.
-Your task is to provide a JSON object containing a 'code' field and an optional 'advice' field.
+Your task is to provide a JSON object containing a 'code' field and an 'advice' field.
 The response language for all text, including code comments and advice, MUST be ${lang}.
 CODE QUALITY REQUIREMENTS:
 - The code must be modular, performant, and easy to integrate.
@@ -45,7 +45,7 @@ CODE QUALITY REQUIREMENTS:
 - Adhere to the standard conventions and best practices of the target engine and language (e.g., use [SerializeField] for private variables exposed to the Unity inspector).
 - For the UI Manager, you MUST implement it using the Singleton design pattern to ensure there's only one instance and it's easily accessible.
 The 'code' field must contain the final, clean code snippet. ${commentInstruction}
-The 'advice' field should only be included for anti-cheat scripts. It must explain the limitations of the client-side script and why server-side validation is superior.
+The 'advice' field must contain expert advice. For anti-cheat scripts, it MUST explain the limitations of the client-side script and why server-side validation is superior. For all other categories, this field MUST be an empty string ("").
 Your response MUST be a valid JSON object.`;
 };
 
