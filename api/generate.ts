@@ -20,29 +20,36 @@ interface ProtectionOptions extends BaseOptions { protectionType: ProtectionType
 interface UiManagerOptions extends BaseOptions { components: UiComponent[] }
 interface TipsOptions extends BaseOptions { genre: Genre; description: string }
 type AllOptions = MovementOptions | ProtectionOptions | BaseOptions | TipsOptions | UiManagerOptions;
-interface GenerationResult { code: string; advice?: string }
 // --- End of Types ---
 
 if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable not set in Vercel settings.");
+  // This error will be caught and sent as a 500 response, which is more informative for debugging.
+  throw new Error("API Key is not configured. Please ensure the API_KEY environment variable is set correctly before running the application.");
 }
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+const codeGenerationSchema = {
+    type: Type.OBJECT,
+    properties: {
+        code: { type: Type.STRING },
+        advice: { type: Type.STRING },
+    },
+    required: ["code", "advice"],
+};
 
-// --- Logic (copied from original geminiService.ts) ---
 const getSystemInstructionGenerate = (language: 'en' | 'ar', includeComments: boolean, category: Category) => {
   const lang = language === 'ar' ? 'ARABIC' : 'ENGLISH';
   const commentInstruction = includeComments
     ? `The code MUST be well-commented in ${lang}, explaining complex parts and XML comments for public members.`
     : `The code MUST NOT include any comments.`;
-  
-  let adviceInstruction = `The 'advice' field should contain a brief, helpful tip related to the code's context (e.g., integration, optimization). If no specific advice is applicable, you can omit this field.`;
+
+  let adviceInstruction = `The 'advice' field MUST contain a brief, helpful tip related to the code's context. If no specific advice is applicable, provide a general best practice or an empty string.`;
   if (category === Category.PROTECTION) {
       adviceInstruction = `The 'advice' field is CRUCIAL for this category and MUST be included. In it, you MUST explain the limitations of a client-side anti-cheat solution and strongly emphasize why server-side validation is the only truly secure approach.`;
   }
 
   return `You are an expert game developer specializing in Unity, Unreal Engine, and Godot.
-Your task is to provide a JSON object containing a 'code' field and optionally an 'advice' field.
+Your task is to provide a JSON object containing a 'code' field and an 'advice' field.
 The response language for all text, including code comments and advice, MUST be ${lang}.
 CODE QUALITY REQUIREMENTS:
 - The code must be modular, performant, and easy to integrate.
@@ -82,87 +89,88 @@ const getPrompt = (category: Category, options: AllOptions, customPrompt?: strin
         case ProtectionType.SPEED_HACK: basePrompt += `Focus on detecting speed hacking by comparing the player's position change over time against a defined maximum speed threshold. If detected, log a warning and revert the position.`; break;
         case ProtectionType.AIMBOT: basePrompt += `Focus on detecting Aimbots. Monitor the camera/player rotation speed. If the angular velocity exceeds a plausible threshold for human input in a single frame, flag it. This is a client-side heuristic.`; break;
         case ProtectionType.WALLHACK_NOCLIP: basePrompt += `Focus on detecting Wallhacks or Noclipping. From the player's last valid position, cast a ray/trace to the current position. If the ray hits a wall or obstacle, it means the player has illegally passed through it. If detected, move the player back to their last valid position.`; break;
-        case ProtectionType.TELEPORT: basePrompt += `Focus on detecting teleportation exploits. Track the player's position every frame. If the distance moved in a single frame is greater than the maximum possible distance (max speed * delta time), flag it as a teleport.`; break;
-        case ProtectionType.MEMORY_EDITING: basePrompt += `Focus on detecting memory editing for critical values (like health or ammo). Implement a "shadow value" system. Store the critical value in two variables: the real one, and a second one that is obfuscated (e.g., XORed with a secret key). Before using the value, check if the obfuscated one still matches the real one. If not, a memory editor was likely used.`; break;
-        case ProtectionType.TIME_SCALE: basePrompt += `Focus on detecting time scale manipulation. Compare the game's delta time with the real-world time that has passed since the last frame (using an independent system clock). If there's a significant discrepancy, the player is likely manipulating the game's time scale.`; break;
+        case ProtectionType.TELEPORT: basePrompt += `Focus on detecting unauthorized teleportation. Check the distance moved in a single frame. If it exceeds a reasonable maximum (e.g., max speed + jump height), it's likely a teleport. Revert the position.`; break;
+        case ProtectionType.MEMORY_EDITING: basePrompt += `Focus on detecting memory value editing for critical stats like health or ammo. Implement a 'shadow value' system where a critical variable has a corresponding encrypted or obfuscated copy. Periodically check if the primary value has been changed without going through the proper game functions by comparing it to the shadow value.`; break;
+        case ProtectionType.TIME_SCALE: basePrompt += `Focus on detecting time scale manipulation. Monitor the game's time scale. Additionally, compare the in-game time progression with the real-world time progression using an independent timer. If there's a significant discrepancy, flag it.`; break;
       }
       break;
     }
-    case Category.INVENTORY: {
-      basePrompt = `Generate a ${lang} script for ${engineName} for a basic list-based inventory system. The script should include functions for: adding an item, removing an item, and checking for an item. Define a simple Item class/struct within the script. It should be a self-contained component.`;
+     case Category.INVENTORY: {
+      basePrompt = `Generate a ${lang} script for ${engineName} for a basic list-based inventory system. The script should include: an 'Item' class or struct (with fields like name, id, description), and an 'InventoryManager' class. The manager should have public functions to AddItem, RemoveItem, and CheckForItem.`;
       break;
     }
     case Category.UI_MANAGER: {
       const { components } = options as UiManagerOptions;
-      basePrompt = `Generate a ${lang} script for ${engineName} for a UI Manager using the Singleton pattern. The script must manage the following UI components:\n${components.map(c => `- ${c}`).join('\n')}\n\nFor each component, create a public method to update it (e.g., UpdateHealthBar, UpdateScoreText). The script should assume UI elements are linked in the editor.`;
+      const componentList = components.join(', ');
+      basePrompt = `Generate a ${lang} script for ${engineName} for a UI Manager using the Singleton design pattern. The manager should control the following UI elements: ${componentList}. It must include public methods to update each of these elements (e.g., UpdateHealthBar(float amount), UpdateScore(int score)). Provide placeholder logic for the UI updates.`;
       break;
     }
-    default:
-      throw new Error("Invalid category specified for code generation");
   }
 
-  if (customPrompt) {
-    basePrompt += `\n\nADDITIONAL USER INSTRUCTIONS: "${customPrompt}". Please incorporate these requirements into the code.`;
+  if (customPrompt && customPrompt.trim().length > 0) {
+    basePrompt += `\nADDITIONAL INSTRUCTIONS: ${customPrompt}`;
   }
+
   return basePrompt;
 };
 
-// --- API Handler ---
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  try {
-    const { action, payload } = req.body;
-
-    if (action === 'generateCode') {
-      const { category, options, customPrompt, language, includeComments } = payload;
-      
-      const systemInstruction = getSystemInstructionGenerate(language, includeComments, category);
-      const userPrompt = getPrompt(category, options, customPrompt);
-      const combinedPrompt = `${systemInstruction}\n\n--- TASK ---\n\n${userPrompt}`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: combinedPrompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              code: { type: Type.STRING, description: "The generated game script." },
-              advice: { type: Type.STRING, description: "Expert advice or warnings related to the generated code." }
-            },
-            required: ["code"]
-          }
-        },
-      });
-      const jsonString = response.text.trim();
-      const result: GenerationResult = JSON.parse(jsonString);
-      if (result.code) {
-        result.code = result.code.replace(/^`{3}[a-zA-Z]*\n/, '').replace(/\n`{3}$/, '');
-      }
-      return res.status(200).json(result);
-
-    } else if (action === 'generateTips') {
-      const { options, language } = payload;
-      const { engine, genre, description } = options;
-      const prompt = `Game Engine: ${engine}\nGame Genre: ${genre}\nGame Description: "${description}"\n\nPlease provide expert advice for developing this game.`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { systemInstruction: getSystemInstructionTips(language), temperature: 0.7 },
-      });
-      const tips = response.text.trim();
-      return res.status(200).json({ tips });
-
-    } else {
-      return res.status(400).json({ error: 'Invalid action specified.' });
+export default async function (request: Request) {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
     }
-  } catch (error: any) {
-    console.error("Error in serverless function:", error);
-    return res.status(500).json({ error: error.message || 'An internal server error occurred.' });
-  }
+
+    try {
+        const { action, payload } = await request.json();
+
+        if (action === 'generateCode') {
+            const { category, options, customPrompt, language, includeComments } = payload;
+            
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: getPrompt(category, options, customPrompt),
+                config: {
+                    systemInstruction: getSystemInstructionGenerate(language, includeComments, category),
+                    responseMimeType: "application/json",
+                    responseSchema: codeGenerationSchema,
+                }
+            });
+
+            return new Response(response.text, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+        } else if (action === 'generateTips') {
+            const { options, language } = payload;
+            const { engine, genre, description } = options as TipsOptions;
+
+            const prompt = `Game Engine: ${engine}\nGame Genre: ${genre}\nGame Description: ${description}`;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    systemInstruction: getSystemInstructionTips(language)
+                }
+            });
+
+            return new Response(JSON.stringify({ tips: response.text }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        } else {
+            return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+        }
+
+    } catch (e: any) {
+        console.error('--- Vercel Function Error ---');
+        console.error(e);
+        console.error('-----------------------------');
+        const errorMessage = e.message || 'An internal server error occurred.';
+        return new Response(JSON.stringify({ error: `Server Error: ${errorMessage}` }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 }

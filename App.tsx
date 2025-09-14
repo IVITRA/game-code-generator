@@ -95,7 +95,7 @@ const App: React.FC = () => {
         setGeneratedCode(result.code);
         setGeneratedAdvice(result.advice);
     } catch (err: any) {
-        setError(t('errorOccurred'));
+        setError(err.message || t('errorOccurred'));
         console.error(err);
     } finally {
         setIsLoading(false);
@@ -119,7 +119,7 @@ const App: React.FC = () => {
         const tips = await generateGameTips(tipsOptions, language, (status) => setLoadingStatus(t(status)));
         setGeneratedTips(tips);
     } catch (err: any) {
-        setError(t('errorOccurredTips'));
+        setError(err.message || t('errorOccurredTips'));
         console.error(err);
     } finally {
         setIsLoading(false);
