@@ -30,12 +30,19 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 
 // --- Logic (copied from original geminiService.ts) ---
-const getSystemInstructionGenerate = (language: 'en' | 'ar', includeComments: boolean) => {
+const getSystemInstructionGenerate = (language: 'en' | 'ar', includeComments: boolean, category: Category) => {
   const lang = language === 'ar' ? 'ARABIC' : 'ENGLISH';
   const commentInstruction = includeComments
     ? `The code MUST be well-commented in ${lang}, explaining complex parts and XML comments for public members.`
     : `The code MUST NOT include any comments.`;
   
+  let adviceInstruction = `The 'advice' field must contain relevant, expert advice for the generated code.`;
+  if (category === Category.PROTECTION) {
+      adviceInstruction += ` Specifically for this anti-cheat script, you MUST explain the limitations of a client-side solution and emphasize why server-side validation is a more secure approach.`;
+  } else {
+      adviceInstruction += ` Provide a brief, helpful tip related to the code's context (e.g., integration, optimization). The advice MUST NOT be an empty string.`;
+  }
+
   return `You are an expert game developer specializing in Unity, Unreal Engine, and Godot.
 Your task is to provide a JSON object containing a 'code' field and an 'advice' field.
 The response language for all text, including code comments and advice, MUST be ${lang}.
@@ -45,8 +52,8 @@ CODE QUALITY REQUIREMENTS:
 - Adhere to the standard conventions and best practices of the target engine and language (e.g., use [SerializeField] for private variables exposed to the Unity inspector).
 - For the UI Manager, you MUST implement it using the Singleton design pattern to ensure there's only one instance and it's easily accessible.
 The 'code' field must contain the final, clean code snippet. ${commentInstruction}
-The 'advice' field must contain expert advice. For anti-cheat scripts, it MUST explain the limitations of the client-side script and why server-side validation is superior. For all other categories, this field MUST be an empty string ("").
-Your response MUST be a valid JSON object.`;
+${adviceInstruction}
+Your response MUST be a valid JSON object that strictly adheres to the provided schema.`;
 };
 
 const getSystemInstructionTips = (language: 'en' | 'ar') => {
@@ -81,7 +88,6 @@ const getPrompt = (category: Category, options: AllOptions, customPrompt?: strin
         case ProtectionType.MEMORY_EDITING: basePrompt += `Focus on detecting memory editing for critical values (like health or ammo). Implement a "shadow value" system. Store the critical value in two variables: the real one, and a second one that is obfuscated (e.g., XORed with a secret key). Before using the value, check if the obfuscated one still matches the real one. If not, a memory editor was likely used.`; break;
         case ProtectionType.TIME_SCALE: basePrompt += `Focus on detecting time scale manipulation. Compare the game's delta time with the real-world time that has passed since the last frame (using an independent system clock). If there's a significant discrepancy, the player is likely manipulating the game's time scale.`; break;
       }
-      basePrompt += `\nCrucially, provide expert advice in the 'advice' field explaining the script's limitations as a client-side solution and why server-side validation is the ultimate, most secure approach.`;
       break;
     }
     case Category.INVENTORY: {
@@ -120,7 +126,7 @@ export default async function handler(req: any, res: any) {
         model: 'gemini-2.5-flash',
         contents: generationPrompt,
         config: {
-          systemInstruction: getSystemInstructionGenerate(language, includeComments),
+          systemInstruction: getSystemInstructionGenerate(language, includeComments, category),
           responseMimeType: "application/json",
           responseSchema: { type: Type.OBJECT, properties: { code: { type: Type.STRING }, advice: { type: Type.STRING } } }
         },
