@@ -119,12 +119,15 @@ export default async function handler(req: any, res: any) {
 
     if (action === 'generateCode') {
       const { category, options, customPrompt, language, includeComments } = payload;
-      const generationPrompt = getPrompt(category, options, customPrompt);
+      
+      const systemInstruction = getSystemInstructionGenerate(language, includeComments, category);
+      const userPrompt = getPrompt(category, options, customPrompt);
+      const combinedPrompt = `${systemInstruction}\n\n--- TASK ---\n\n${userPrompt}`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: generationPrompt,
+        contents: combinedPrompt,
         config: {
-          systemInstruction: getSystemInstructionGenerate(language, includeComments, category),
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
